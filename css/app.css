@@ -608,6 +608,14 @@ select.input { appearance: none; padding-right: 36px; background-image: linear-g
 
 .input-amount { font-size: 1.6rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 
+.amount-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+
+.segmented-compact { grid-template-columns: repeat(2, auto); align-content: center; }
+
+.segmented-compact .segment { padding: 8px 10px; font-weight: 600; }
+
+.currency-switch { margin-top: var(--gap); }
+
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .chip {
@@ -658,6 +666,10 @@ select.input { appearance: none; padding-right: 36px; background-image: linear-g
 .capture-check input { width: 20px; height: 20px; accent-color: var(--accent); }
 
 .capture-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px; }
+
+.capture-money { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
+
+.capture-currency { width: auto; padding-left: 10px; }
 
 .capture-amount { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 

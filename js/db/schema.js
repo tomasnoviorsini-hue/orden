@@ -1,7 +1,7 @@
 import { uid } from '../lib/id.js';
 
 export const DB_NAME = 'orden';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   periodStartDay: 17,
@@ -66,6 +66,25 @@ const migrations = {
   // Ingreso fijo por período: { start: 'YYYY-MM-DD' (inicio del período), amount (centavos), updatedAt }.
   2(db) {
     db.createObjectStore('periodIncome', { keyPath: 'start' });
+  },
+
+  // Moneda por movimiento ('ARS' | 'USD') e ingreso fijo por moneda:
+  // periodIncomes = { currency, start, amount, updatedAt }, clave [currency, start].
+  // Los datos anteriores quedan en pesos.
+  3(db, tx) {
+    const incomes = db.createObjectStore('periodIncomes', { keyPath: ['currency', 'start'] });
+    const old = tx.objectStore('periodIncome');
+    old.getAll().onsuccess = (event) => {
+      event.target.result.forEach((record) => incomes.put({ ...record, currency: 'ARS' }));
+      db.deleteObjectStore('periodIncome');
+    };
+
+    tx.objectStore('transactions').openCursor().onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (!cursor) return;
+      if (!cursor.value.currency) cursor.update({ ...cursor.value, currency: 'ARS' });
+      cursor.continue();
+    };
   },
 };
 

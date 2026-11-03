@@ -53,6 +53,12 @@ Después de instalar:
 4. `git commit -am "…"` y `git push`.
 5. En el celular, abrir la app con conexión: aparece **Hay una nueva versión disponible → Actualizar**.
 
+## Monedas
+
+Cada movimiento se carga en pesos o en dólares. Los totales nunca se mezclan ni se convierten:
+**Movimientos** muestra un saldo por moneda y **Resumen** tiene un selector Pesos / Dólares, con su
+propio ingreso fijo del período en cada moneda. Los datos anteriores a esta función quedan en pesos.
+
 ## Carga desde capturas
 
 **Finanzas → ícono de imagen**: se eligen capturas de los movimientos (banco, billetera, tarjeta),

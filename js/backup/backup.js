@@ -1,6 +1,7 @@
 import { withTx, promisify, get, put } from '../db/idb.js';
 import { DB_VERSION } from '../db/schema.js';
 import { isValidISO, todayISO } from '../lib/date.js';
+import { isCurrency } from '../lib/money.js';
 
 /*
  * Respaldo completo en JSON:
@@ -8,7 +9,7 @@ import { isValidISO, todayISO } from '../lib/date.js';
  * La importación reemplaza todo en una sola transacción: si algo falla, no cambia nada.
  */
 
-export const BACKUP_STORES = ['meta', 'categories', 'transactions', 'imports', 'tasks', 'periodIncome'];
+export const BACKUP_STORES = ['meta', 'categories', 'transactions', 'imports', 'tasks', 'periodIncomes'];
 
 const APP_ID = 'orden';
 const FORMAT = 1;
@@ -20,7 +21,7 @@ const LABELS = {
   transactions: 'movimientos',
   imports: 'importaciones',
   tasks: 'tareas',
-  periodIncome: 'ingresos del período',
+  periodIncomes: 'ingresos del período',
 };
 
 const isKind = (value) => value === 'income' || value === 'expense';
@@ -31,10 +32,10 @@ const VALIDATORS = {
   categories: (r) => typeof r.id === 'string' && typeof r.name === 'string' && isKind(r.kind),
   transactions: (r, refs) =>
     typeof r.id === 'string' && isKind(r.type) && isPositiveInt(r.amount) &&
-    isValidISO(r.date) && refs.categoryIds.has(r.categoryId),
+    isValidISO(r.date) && refs.categoryIds.has(r.categoryId) && isCurrency(r.currency),
   imports: (r) => typeof r.id === 'string',
   tasks: (r) => typeof r.id === 'string' && isValidISO(r.date) && typeof r.title === 'string' && typeof r.done === 'boolean',
-  periodIncome: (r) => isValidISO(r.start) && isPositiveInt(r.amount),
+  periodIncomes: (r) => isCurrency(r.currency) && isValidISO(r.start) && isPositiveInt(r.amount),
 };
 
 function fail(message) {
@@ -74,6 +75,21 @@ export async function getLastBackupAt() {
   return (await get('meta', 'lastBackupAt'))?.value ?? null;
 }
 
+/**
+ * Lleva los datos de respaldos anteriores al esquema actual, como la migración 3:
+ * sin moneda → pesos; el almacén periodIncome pasa a periodIncomes.
+ */
+function upgradeData(data) {
+  const withCurrency = (records) => (Array.isArray(records)
+    ? records.map((record) => (record && typeof record === 'object' && !record.currency ? { ...record, currency: 'ARS' } : record))
+    : records);
+  return {
+    ...data,
+    transactions: withCurrency(data.transactions),
+    periodIncomes: withCurrency(data.periodIncomes ?? data.periodIncome),
+  };
+}
+
 /** Valida el contenido de un respaldo. Lanza un Error con un mensaje para mostrar si no es válido. */
 export function parseBackup(text) {
   let backup;
@@ -92,9 +108,10 @@ export function parseBackup(text) {
   }
 
   // Un respaldo de una versión anterior puede no tener los almacenes agregados después: se toman vacíos.
+  const source = upgradeData(backup.data);
   const data = {};
   for (const name of BACKUP_STORES) {
-    const records = backup.data[name] ?? [];
+    const records = source[name] ?? [];
     if (!Array.isArray(records)) fail(`La sección de ${LABELS[name]} del respaldo está dañada.`);
     data[name] = records;
   }

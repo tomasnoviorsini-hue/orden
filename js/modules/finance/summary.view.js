@@ -1,12 +1,12 @@
 import { h, icon, toast } from '../../lib/ui.js';
 import { shiftPeriod, formatPeriodShort, formatShort } from '../../lib/date.js';
-import { formatARS, formatCompactARS, formatPercent, formatAmountInput, parseARS } from '../../lib/money.js';
+import { formatMoney, formatCompactMoney, formatPercent, formatAmountInput, parseARS, CURRENCY_NAMES, DEFAULT_CURRENCY } from '../../lib/money.js';
 import { donutChart, groupedBarChart } from '../../lib/charts.js';
 import { getCategoryMap } from './categories.repo.js';
 import { listByPeriod } from './transactions.repo.js';
 import { listPeriodIncomes, setPeriodIncome, removePeriodIncome } from './period-income.repo.js';
 import { ratio, totalsByCategory, topWithOther, periodSummary, periodSeries } from './metrics.js';
-import { resolvePeriod, setFinanceAppBar, periodHeader, financeTabs, periodPath } from './period-nav.js';
+import { resolvePeriod, setFinanceAppBar, periodHeader, financeTabs, periodPath, getViewCurrency, currencySwitch } from './period-nav.js';
 
 const HISTORY = 6;
 const DONUT_MAX = 6; // porciones del anillo; el resto se agrupa en "Otras"
@@ -22,6 +22,12 @@ const SERIES = [
 const pct = (value) => (value == null ? '—' : formatPercent(value));
 
 const rerender = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+// Moneda de la vista. Se fija en render(); todos los montos de esta pantalla son de esa moneda.
+let currency = DEFAULT_CURRENCY;
+const money = (cents) => formatMoney(cents, currency);
+const moneyCompact = (cents) => formatCompactMoney(cents, currency);
+const inCurrency = () => (currency === DEFAULT_CURRENCY ? '' : ` en ${CURRENCY_NAMES[currency].toLowerCase()}`);
 
 /** Diálogo del ingreso fijo. Resuelve { action: 'save', amount } | { action: 'remove' } | null. */
 function incomeDialog({ period, amount, canRemove }) {
@@ -54,7 +60,7 @@ function incomeDialog({ period, amount, canRemove }) {
           result = { action: 'save', amount: cents };
         },
       },
-        h('h2', { class: 'dialog-title' }, 'Ingreso del período'),
+        h('h2', { class: 'dialog-title' }, `Ingreso del período${inCurrency()}`),
         h('p', { class: 'muted' },
           `${period.label}. Se usa como base de los porcentajes y del saldo, y se mantiene en los períodos siguientes hasta que lo modifique.`),
         input,
@@ -85,10 +91,10 @@ async function editIncome(summary, period) {
   if (!result) return;
   try {
     if (result.action === 'remove') {
-      await removePeriodIncome(period);
+      await removePeriodIncome(currency, period);
       toast('Se quitó el ingreso fijo de este período.');
     } else {
-      await setPeriodIncome(period, result.amount);
+      await setPeriodIncome(currency, period, result.amount);
       toast('Ingreso del período guardado.');
     }
   } catch (error) {
@@ -108,11 +114,11 @@ function incomeBaseCard(summary, period) {
 
   return h('div', { class: 'card summary' },
     h('div', { class: 'row' },
-      h('span', { class: 'summary-label' }, 'Ingreso del período'),
+      h('span', { class: 'summary-label' }, `Ingreso del período${inCurrency()}`),
       h('button', { class: 'btn btn-sm', type: 'button', onclick: () => editIncome(summary, period) },
         fixed ? 'Modificar' : 'Cargar ingreso')
     ),
-    h('strong', { class: 'summary-balance' }, formatARS(income)),
+    h('strong', { class: 'summary-balance' }, money(income)),
     h('p', { class: 'muted' }, source)
   );
 }
@@ -121,7 +127,7 @@ function breakdownRow(category, amount, barShare, meta) {
   return h('li', { class: 'breakdown-row' },
     h('span', { class: 'cat-dot', style: `background:${category.color}` }),
     h('span', null, category.name),
-    h('span', { class: 'breakdown-amount' }, formatARS(amount)),
+    h('span', { class: 'breakdown-amount' }, money(amount)),
     h('span', { class: 'breakdown-bar' },
       h('span', { style: `width:${Math.min(100, barShare * 100)}%;background:${category.color}` })
     ),
@@ -148,7 +154,7 @@ function heroCard({ income, expense, balance }) {
       'aria-valuenow': share == null ? null : String(Math.round(share * 100)),
     }, h('span', { class: 'meter-fill', style: `width:${fill}%` })),
     h('p', { class: 'muted' }, income > 0
-      ? `Gastó ${formatARS(expense)} de ${formatARS(income)}. Saldo disponible: ${formatARS(balance)}.`
+      ? `Gastó ${money(expense)} de ${money(income)}. Saldo disponible: ${money(balance)}.`
       : 'Cargue el ingreso del período para calcular el porcentaje.'),
     over && h('p', { class: 'alert' }, icon('alert'), 'Los gastos superan al ingreso del período.')
   );
@@ -165,16 +171,16 @@ function expensesCard(transactions, { income, expense }, categoryOf) {
 
   const donut = donutChart({
     slices,
-    label: `Gastos por categoría: ${slices.map((s) => `${s.label} ${formatARS(s.value)}`).join(', ')}`,
+    label: `Gastos por categoría: ${slices.map((s) => `${s.label} ${money(s.value)}`).join(', ')}`,
     renderCenter: (slice) => (slice
       ? [
           h('span', null, slice.label),
-          h('strong', null, formatARS(slice.value)),
+          h('strong', null, money(slice.value)),
           h('span', null, income ? `${pct(ratio(slice.value, income))} del ingreso` : `${pct(slice.value / expense)} de los gastos`),
         ]
       : [
           h('span', null, 'Total gastado'),
-          h('strong', null, formatARS(expense)),
+          h('strong', null, money(expense)),
           income ? h('span', null, `${pct(ratio(expense, income))} del ingreso`) : null,
         ]),
   });
@@ -199,7 +205,7 @@ function incomeMovementsCard(transactions, { fixed, movementIncome }, categoryOf
 
   return h('div', { class: 'card stack' },
     fixed && h('p', { class: 'muted' },
-      `Estos ingresos (${formatARS(movementIncome)}) no se suman a la base porque el período tiene un ingreso fijo.`),
+      `Estos ingresos (${money(movementIncome)}) no se suman a la base porque el período tiene un ingreso fijo.`),
     h('ul', { class: 'breakdown' }, rows.map(({ categoryId, amount }) =>
       breakdownRow(categoryOf(categoryId), amount, amount / movementIncome, `${pct(amount / movementIncome)} de estos ingresos`)
     ))
@@ -223,9 +229,9 @@ function evolutionCard(series, { period, current }) {
           h('a', { class: 'link-sm', href: `#/${periodPath('resumen', item.period, current)}` }, 'Ver período')
       ),
       h('dl', { class: 'detail-list' },
-        detail(item.fixed ? 'Ingreso (fijo)' : 'Ingresos', formatARS(item.income)),
-        detail('Gastos', formatARS(item.expense)),
-        detail('Saldo', formatARS(item.balance))
+        detail(item.fixed ? 'Ingreso (fijo)' : 'Ingresos', money(item.income)),
+        detail('Gastos', money(item.expense)),
+        detail('Saldo', money(item.balance))
       )
     );
   }
@@ -233,9 +239,9 @@ function evolutionCard(series, { period, current }) {
   const chart = groupedBarChart({
     groups: series.map((item) => ({ label: formatPeriodShort(item.period), values: [item.income, item.expense] })),
     colors: SERIES.map((s) => s.color),
-    formatTick: formatCompactARS,
+    formatTick: moneyCompact,
     label: `Ingresos y gastos de los últimos ${HISTORY} períodos. ${series
-      .map((item) => `${item.period.label}: ingresos ${formatARS(item.income)}, gastos ${formatARS(item.expense)}`)
+      .map((item) => `${item.period.label}: ingresos ${money(item.income)}, gastos ${money(item.expense)}`)
       .join('. ')}`,
     onSelect: showDetail,
   });
@@ -252,9 +258,9 @@ function evolutionCard(series, { period, current }) {
       h('tbody', null, [...series].reverse().map((item) =>
         h('tr', null,
           h('td', null, formatPeriodShort(item.period)),
-          h('td', null, formatCompactARS(item.income)),
-          h('td', null, formatCompactARS(item.expense)),
-          h('td', null, formatCompactARS(item.balance))
+          h('td', null, moneyCompact(item.income)),
+          h('td', null, moneyCompact(item.expense)),
+          h('td', null, moneyCompact(item.balance))
         )
       ))
     )
@@ -265,15 +271,17 @@ function evolutionCard(series, { period, current }) {
 
 export async function render(root, startParam) {
   const ctx = await resolvePeriod(startParam);
+  currency = getViewCurrency();
   const { period, startDay } = ctx;
   setFinanceAppBar('resumen', ctx);
 
   const periods = Array.from({ length: HISTORY }, (_, i) => shiftPeriod(period, i - HISTORY + 1, startDay));
-  const [history, categories, incomeRecords] = await Promise.all([
+  const [allHistory, categories, incomeRecords] = await Promise.all([
     listByPeriod({ start: periods[0].start, end: period.end }),
     getCategoryMap(),
-    listPeriodIncomes(),
+    listPeriodIncomes(currency),
   ]);
+  const history = allHistory.filter((t) => t.currency === currency);
 
   const transactions = history.filter((t) => t.date >= period.start);
   const summary = periodSummary(transactions, period, incomeRecords);
@@ -282,6 +290,7 @@ export async function render(root, startParam) {
   root.append(
     periodHeader('resumen', ctx),
     financeTabs('resumen', ctx),
+    currencySwitch(currency),
     incomeBaseCard(summary, period),
     heroCard(summary),
     h('h2', { class: 'section-title' }, 'Gastos por categoría'),

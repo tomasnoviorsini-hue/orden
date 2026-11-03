@@ -1,6 +1,7 @@
 import { withTx, promisify, getAll } from '../../../db/idb.js';
 import { uid } from '../../../lib/id.js';
 import { isValidISO } from '../../../lib/date.js';
+import { isCurrency, DEFAULT_CURRENCY } from '../../../lib/money.js';
 
 /*
  * Único punto de escritura de movimientos.
@@ -11,6 +12,7 @@ import { isValidISO } from '../../../lib/date.js';
  *   TransactionDraft = {
  *     type: 'income' | 'expense',
  *     amount: number,          // centavos, entero > 0
+ *     currency?: 'ARS' | 'USD', // por defecto ARS
  *     date: 'YYYY-MM-DD',
  *     categoryId: string,
  *     description?: string,
@@ -29,6 +31,7 @@ function normalize(draft) {
   return {
     type: draft.type,
     amount: typeof draft.amount === 'number' ? Math.round(draft.amount) : NaN,
+    currency: draft.currency ?? DEFAULT_CURRENCY,
     date: String(draft.date ?? ''),
     categoryId: draft.categoryId ?? null,
     description: String(draft.description ?? '').trim().replace(/\s+/g, ' ').slice(0, DESCRIPTION_MAX),
@@ -40,6 +43,7 @@ function validate(record, categoriesById) {
   if (!TYPES.has(record.type)) return 'El tipo de movimiento no es válido.';
   if (!Number.isInteger(record.amount) || record.amount <= 0) return 'Ingrese un monto válido mayor a cero.';
   if (record.amount > MAX_AMOUNT) return 'El monto es demasiado grande.';
+  if (!isCurrency(record.currency)) return 'La moneda no es válida.';
   if (!isValidISO(record.date)) return 'Ingrese una fecha válida.';
   const category = categoriesById.get(record.categoryId);
   if (!category) return 'Elija una categoría.';
@@ -63,8 +67,10 @@ function hash(text) {
 export const simplifyText = (text) =>
   text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
-export function fingerprint({ date, type, amount, description }) {
-  return hash(`${date}|${type}|${amount}|${simplifyText(description)}`);
+// Los movimientos en pesos conservan la huella de antes de que existieran las monedas.
+export function fingerprint({ date, type, amount, description, currency = DEFAULT_CURRENCY }) {
+  const suffix = currency === DEFAULT_CURRENCY ? '' : `|${currency}`;
+  return hash(`${date}|${type}|${amount}|${simplifyText(description)}${suffix}`);
 }
 
 async function prepare(drafts) {

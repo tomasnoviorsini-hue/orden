@@ -1,5 +1,5 @@
 // Subir VERSION en cada cambio de archivos para que el celular descargue la nueva versión.
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CACHE = `orden-${VERSION}`;
 // Lector de capturas (vendor/, ≈ 6 MB): no se precarga; se guarda al primer uso y se conserva
 // entre versiones. Cambiar el sufijo solo si cambian esos archivos.

@@ -37,7 +37,7 @@ export function donutChart({ slices, label, renderCenter, size = 200, thickness 
   function update() {
     chart.classList.toggle('has-selection', selected != null);
     arcs.forEach(({ arc, slice }) => arc.classList.toggle('is-selected', slice === selected));
-    centerEl.replaceChildren(...renderCenter(selected));
+    centerEl.replaceChildren(...renderCenter(selected).filter(Boolean));
   }
 
   let offset = 0;

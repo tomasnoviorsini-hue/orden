@@ -1,6 +1,6 @@
 import { h, icon, setAppBar, toast, confirmDialog } from '../../lib/ui.js';
 import { todayISO, isValidISO } from '../../lib/date.js';
-import { formatARS, formatAmountInput, parseARS } from '../../lib/money.js';
+import { formatMoney, formatAmountInput, parseARS, CURRENCIES, CURRENCY_SYMBOLS, CURRENCY_NAMES } from '../../lib/money.js';
 import { getAll, countByIndex } from '../../db/idb.js';
 import { recognizeImage, releaseOcr } from '../../lib/ocr.js';
 import { navigate } from '../../router.js';
@@ -99,13 +99,20 @@ export async function render(root) {
     )
   );
 
+  // "$ 1.000 + US$ 20", sin mezclar monedas.
+  function sumByCurrency(list) {
+    const parts = CURRENCIES
+      .map((currency) => [currency, list.filter((row) => row.currency === currency).reduce((sum, row) => sum + (row.amount ?? 0), 0)])
+      .filter(([, amount]) => amount);
+    return parts.length ? parts.map(([currency, amount]) => formatMoney(amount, currency)).join(' + ') : formatMoney(0);
+  }
+
   function updateSummary() {
     const included = rows.filter((row) => row.include);
-    const expense = included.filter((row) => row.type === 'expense').reduce((sum, row) => sum + (row.amount ?? 0), 0);
-    const income = included.filter((row) => row.type === 'income').reduce((sum, row) => sum + (row.amount ?? 0), 0);
+    const incomes = included.filter((row) => row.type === 'income');
     reviewTitle.textContent = rows.length === 1 ? '1 movimiento detectado' : `${rows.length} movimientos detectados`;
-    totals.textContent = `Seleccionados: ${included.length} · Gastos ${formatARS(expense)}` +
-      (income ? ` · Ingresos ${formatARS(income)}` : '');
+    totals.textContent = `Seleccionados: ${included.length} · Gastos ${sumByCurrency(included.filter((row) => row.type === 'expense'))}` +
+      (incomes.length ? ` · Ingresos ${sumByCurrency(incomes)}` : '');
     saveButton.textContent = included.length === 1 ? 'Guardar 1 movimiento' : `Guardar ${included.length} movimientos`;
     saveButton.disabled = busy || !included.length;
   }
@@ -171,6 +178,13 @@ export async function render(root) {
       },
     });
 
+    const currencySelect = h('select', {
+      class: 'input capture-currency', 'aria-label': 'Moneda',
+      onchange: () => { row.currency = currencySelect.value; updateSummary(); },
+    }, CURRENCIES.map((currency) =>
+      h('option', { value: currency, selected: row.currency === currency, title: CURRENCY_NAMES[currency] }, CURRENCY_SYMBOLS[currency])
+    ));
+
     const descriptionInput = h('input', {
       class: 'input', type: 'text', maxlength: String(DESCRIPTION_MAX), autocomplete: 'off',
       'aria-label': 'Descripción', placeholder: 'Descripción', value: row.description,
@@ -202,7 +216,7 @@ export async function render(root) {
       ),
       h('div', { class: 'capture-grid' },
         typeSelect,
-        amountInput,
+        h('div', { class: 'capture-money' }, currencySelect, amountInput),
         dateInput,
         h('div', { class: 'capture-category' }, dot, categorySelect)
       ),

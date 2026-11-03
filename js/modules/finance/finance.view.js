@@ -1,6 +1,6 @@
 import { h, icon } from '../../lib/ui.js';
 import { formatLong } from '../../lib/date.js';
-import { formatARS } from '../../lib/money.js';
+import { formatMoney, CURRENCIES, CURRENCY_NAMES } from '../../lib/money.js';
 import { getCategoryMap } from './categories.repo.js';
 import { listByPeriod } from './transactions.repo.js';
 import { listPeriodIncomes } from './period-income.repo.js';
@@ -43,7 +43,25 @@ function movementItem(transaction, categories) {
         h('span', null, category.name),
         transaction.description && h('span', { class: 'muted movement-desc' }, transaction.description)
       ),
-      h('span', { class: `movement-amount ${transaction.type}` }, `${sign} ${formatARS(transaction.amount)}`)
+      h('span', { class: `movement-amount ${transaction.type}` }, `${sign} ${formatMoney(transaction.amount, transaction.currency)}`)
+    )
+  );
+}
+
+function summaryCard(currency, { income, expense, balance, fixed }, labelled) {
+  const money = (cents) => formatMoney(cents, currency);
+  return h('div', { class: 'card summary' },
+    h('span', { class: 'summary-label' }, labelled ? `Saldo disponible en ${CURRENCY_NAMES[currency].toLowerCase()}` : 'Saldo disponible'),
+    h('strong', { class: balance < 0 ? 'summary-balance expense' : 'summary-balance' }, money(balance)),
+    h('div', { class: 'summary-row' },
+      h('div', null,
+        h('span', { class: 'summary-label' }, fixed ? 'Ingreso del período' : 'Ingresos'),
+        h('span', { class: 'summary-value income' }, money(income))
+      ),
+      h('div', null,
+        h('span', { class: 'summary-label' }, 'Gastos'),
+        h('span', { class: 'summary-value expense' }, money(expense))
+      )
     )
   );
 }
@@ -53,27 +71,19 @@ async function renderMovements(root, startParam) {
   const { period, isCurrent } = ctx;
   setFinanceAppBar('movimientos', ctx);
 
-  const [transactions, categories, incomeRecords] = await Promise.all([
+  const [transactions, categories, ...incomeRecords] = await Promise.all([
     listByPeriod(period),
     getCategoryMap(),
-    listPeriodIncomes(),
+    ...CURRENCIES.map((currency) => listPeriodIncomes(currency)),
   ]);
-  const { income, expense, balance, fixed } = periodSummary(transactions, period, incomeRecords);
 
-  const summary = h('div', { class: 'card summary' },
-    h('span', { class: 'summary-label' }, 'Saldo disponible'),
-    h('strong', { class: balance < 0 ? 'summary-balance expense' : 'summary-balance' }, formatARS(balance)),
-    h('div', { class: 'summary-row' },
-      h('div', null,
-        h('span', { class: 'summary-label' }, fixed ? 'Ingreso del período' : 'Ingresos'),
-        h('span', { class: 'summary-value income' }, formatARS(income))
-      ),
-      h('div', null,
-        h('span', { class: 'summary-label' }, 'Gastos'),
-        h('span', { class: 'summary-value expense' }, formatARS(expense))
-      )
-    )
-  );
+  // Un resumen por moneda, sin convertir. Los pesos siempre se muestran; las demás, si tienen datos.
+  const summaries = CURRENCIES.map((currency, i) => {
+    const own = transactions.filter((t) => t.currency === currency);
+    const summary = periodSummary(own, period, incomeRecords[i]);
+    const show = i === 0 || own.length > 0 || summary.fixed;
+    return show && summaryCard(currency, summary, i > 0);
+  });
 
   const groups = new Map();
   for (const transaction of transactions) {
@@ -99,7 +109,7 @@ async function renderMovements(root, startParam) {
   root.append(
     periodHeader('movimientos', ctx),
     financeTabs('movimientos', ctx),
-    summary,
+    ...summaries.filter(Boolean),
     h('h2', { class: 'section-title' }, 'Movimientos'),
     movements,
     h('div', { class: 'fab-spacer' }),

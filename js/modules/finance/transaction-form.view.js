@@ -1,6 +1,6 @@
 import { h, icon, setAppBar, toast } from '../../lib/ui.js';
 import { todayISO, isValidISO, periodFor } from '../../lib/date.js';
-import { formatAmountInput, parseARS } from '../../lib/money.js';
+import { formatAmountInput, parseARS, CURRENCIES, CURRENCY_SYMBOLS, CURRENCY_NAMES, DEFAULT_CURRENCY } from '../../lib/money.js';
 import { navigate } from '../../router.js';
 import { getSettings } from '../settings/settings.repo.js';
 import { listCategories } from './categories.repo.js';
@@ -41,6 +41,7 @@ export async function render(root, mode, arg) {
 
   let type = existing?.type ?? 'expense';
   let categoryId = existing?.categoryId ?? null;
+  let currency = existing?.currency ?? DEFAULT_CURRENCY;
 
   // Tipo
 
@@ -59,6 +60,19 @@ export async function render(root, mode, arg) {
   );
 
   // Campos
+
+  const currencyToggle = h('div', { class: 'segmented segmented-compact', role: 'radiogroup', 'aria-label': 'Moneda' },
+    CURRENCIES.map((value) =>
+      h('label', { class: 'segment', title: CURRENCY_NAMES[value] },
+        h('input', {
+          type: 'radio', name: 'currency', value, checked: currency === value,
+          'aria-label': CURRENCY_NAMES[value],
+          onchange: () => { currency = value; },
+        }),
+        CURRENCY_SYMBOLS[value]
+      )
+    )
+  );
 
   const amountInput = h('input', {
     id: 'amount',
@@ -114,6 +128,7 @@ export async function render(root, mode, arg) {
     try {
       const saved = await saveManualTransaction({
         type,
+        currency,
         amountText: amountInput.value,
         date: dateInput.value,
         categoryId,
@@ -144,7 +159,7 @@ export async function render(root, mode, arg) {
   root.append(
     h('form', { class: 'stack', novalidate: true, onsubmit: save },
       typeToggle,
-      field('amount', 'Monto', amountInput),
+      field('amount', 'Monto', h('div', { class: 'amount-row' }, currencyToggle, amountInput)),
       h('div', { class: 'field' },
         h('span', { id: 'category-label', class: 'field-label' }, 'Categoría'),
         categoryGroup,

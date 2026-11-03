@@ -6,6 +6,7 @@ import { ingest, simplifyText } from '../ingest.js';
 //   ScreenshotRow = {
 //     description: string,
 //     amount: number,              // centavos
+//     currency: 'ARS' | 'USD',
 //     type: 'income' | 'expense',
 //     date: 'YYYY-MM-DD',
 //     dateFound: boolean,          // false: no había fecha en la captura y se usó la de hoy
@@ -14,7 +15,8 @@ import { ingest, simplifyText } from '../ingest.js';
 
 const SIGN = '[+\\-−–]';
 // Con "$": admite separador de miles con punto o espacio (el OCR a veces cambia uno por otro).
-const AMOUNT_WITH_SYMBOL = `(${SIGN})?\\s*(?:\\$|ARS)\\s*(${SIGN})?\\s*(\\d{1,3}(?:[. ]\\d{3})+(?:,\\d{1,2})?|\\d+(?:,\\d{1,2})?)(?![\\d.,])`;
+// "US$", "U$S" y "USD" marcan dólares.
+const AMOUNT_WITH_SYMBOL = `(${SIGN})?\\s*(?:(US\\$|U\\$S|USD)|\\$|ARS)\\s*(${SIGN})?\\s*(\\d{1,3}(?:[. ]\\d{3})+(?:,\\d{1,2})?|\\d+(?:,\\d{1,2})?)(?![\\d.,])`;
 // Sin "$": solo números con decimales, para no confundir fechas, horas o números de tarjeta.
 const AMOUNT_PLAIN = `(${SIGN})?\\s*(\\d{1,3}(?:\\.\\d{3})*,\\d{2})(?![\\d,])`;
 const AMOUNT_RE = new RegExp(`${AMOUNT_WITH_SYMBOL}|${AMOUNT_PLAIN}`, 'i');
@@ -33,12 +35,12 @@ const SUSPICIOUS_WORDS = /\b(saldo|disponible|total|l[ií]mite|consumos del|resu
 const NOISE_WORDS = /^(movimientos|actividad|[uú]ltimos movimientos|ver (todo|m[aá]s)|inicio|tarjetas?|cuentas?|filtrar|buscar|hoy|ayer)$/i;
 
 function parseAmount(match) {
-  const [, signA, signB, symbolDigits, plainSign, plainDigits] = match;
+  const [, signA, usd, signB, symbolDigits, plainSign, plainDigits] = match;
   const digits = symbolDigits ?? plainDigits;
   const [integer, decimals = ''] = digits.replace(/[. ]/g, '').split(',');
   const amount = Number(integer) * 100 + Number(decimals.padEnd(2, '0'));
   const sign = signA ?? signB ?? plainSign ?? null;
-  return { amount, sign: sign ? (sign === '+' ? '+' : '-') : null };
+  return { amount, currency: usd ? 'USD' : 'ARS', sign: sign ? (sign === '+' ? '+' : '-') : null };
 }
 
 function validDate(year, month, day) {
@@ -125,7 +127,7 @@ export function parseStatementText(text, today) {
       continue;
     }
 
-    const { amount, sign } = parseAmount(amountMatch);
+    const { amount, currency, sign } = parseAmount(amountMatch);
     if (amount <= 0) continue;
 
     const finalDescription = letterCount(description) >= 2 ? description : pendingDescription;
@@ -134,6 +136,7 @@ export function parseStatementText(text, today) {
     lastRow = {
       description: finalDescription,
       amount,
+      currency,
       type,
       date: currentDate ?? today,
       dateFound: Boolean(currentDate),
@@ -150,7 +153,7 @@ export function parseStatementText(text, today) {
 /** Guarda las filas confirmadas. Los movimientos que ya existían (misma huella) se omiten. */
 export function saveScreenshotRows(rows, fileName) {
   return ingest(
-    rows.map(({ type, amount, date, categoryId, description }) => ({ type, amount, date, categoryId, description })),
+    rows.map(({ type, currency, amount, date, categoryId, description }) => ({ type, currency, amount, date, categoryId, description })),
     { kind: 'screenshot', fileName }
   );
 }
