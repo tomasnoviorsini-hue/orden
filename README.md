@@ -53,6 +53,17 @@ Después de instalar:
 4. `git commit -am "…"` y `git push`.
 5. En el celular, abrir la app con conexión: aparece **Hay una nueva versión disponible → Actualizar**.
 
+## Carga desde capturas
+
+**Finanzas → ícono de imagen**: se eligen capturas de los movimientos (banco, billetera, tarjeta),
+el texto se lee en el dispositivo con Tesseract.js (`vendor/tesseract/`, ver su README) y se sugiere
+la categoría según el historial y comercios conocidos (`js/modules/finance/classifier.js`).
+Todo se revisa antes de guardar; los movimientos ya cargados se omiten.
+
+El lector (≈ 6 MB) no se precarga: se descarga la primera vez que se usa (con conexión) y queda
+en el caché `orden-vendor-1`, que se conserva entre versiones. Si se reemplazan los archivos de
+`vendor/`, cambiar ese nombre en `sw.js`.
+
 ## Advertencias
 
 - Los datos están atados a la dirección de la app. Si cambia la URL (otro nombre de repositorio,

@@ -59,11 +59,12 @@ function hash(text) {
   return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
 }
 
-const simplify = (text) =>
+/** Texto sin tildes, en minúsculas y con espacios simples (para comparar descripciones). */
+export const simplifyText = (text) =>
   text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 export function fingerprint({ date, type, amount, description }) {
-  return hash(`${date}|${type}|${amount}|${simplify(description)}`);
+  return hash(`${date}|${type}|${amount}|${simplifyText(description)}`);
 }
 
 async function prepare(drafts) {

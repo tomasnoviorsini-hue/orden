@@ -27,6 +27,10 @@ export function setFinanceAppBar(view, { current, isCurrent }) {
       onclick: () => navigate(periodPath(view, current, current)),
     }, 'Ir al actual'),
     h('button', {
+      class: 'btn btn-icon', type: 'button', 'aria-label': 'Cargar desde captura',
+      onclick: () => navigate('finanzas/captura'),
+    }, icon('image')),
+    h('button', {
       class: 'btn btn-icon', type: 'button', 'aria-label': 'Categorías',
       onclick: () => navigate('finanzas/categorias'),
     }, icon('tag'))

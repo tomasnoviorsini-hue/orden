@@ -14,7 +14,11 @@ import { resolvePeriod, setFinanceAppBar, periodHeader, financeTabs } from './pe
 //   #/finanzas/nuevo[/AAAA-MM-DD]  alta (fecha sugerida opcional)
 //   #/finanzas/editar/<id>         edición
 //   #/finanzas/categorias          administración de categorías
+//   #/finanzas/captura             carga desde capturas de pantalla (OCR)
 export async function render(root, [section, arg]) {
+  if (section === 'captura') {
+    return (await import('./screenshot.view.js')).render(root);
+  }
   if (section === 'nuevo' || section === 'editar') {
     return (await import('./transaction-form.view.js')).render(root, section, arg);
   }
