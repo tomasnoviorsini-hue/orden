@@ -3,6 +3,7 @@ import { route, start } from './router.js';
 import { h, toast } from './lib/ui.js';
 
 route('tareas', 'Tareas', () => import('./modules/tasks/tasks.view.js'));
+route('calendario', 'Calendario', () => import('./modules/tasks/calendar.view.js'));
 route('finanzas', 'Finanzas', () => import('./modules/finance/finance.view.js'));
 route('ajustes', 'Ajustes', () => import('./modules/settings/settings.view.js'));
 

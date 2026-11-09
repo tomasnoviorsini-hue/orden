@@ -1,4 +1,4 @@
-import { withTx, promisify, getAllByIndex, put } from '../../db/idb.js';
+import { withTx, promisify, getAll, getAllByIndex, put } from '../../db/idb.js';
 import { uid } from '../../lib/id.js';
 
 const STORE = 'tasks';
@@ -43,6 +43,17 @@ export async function statsByDateRange(start, end) {
     stats.set(task.date, day);
   }
   return stats;
+}
+
+// Sin tildes, en minúsculas y con espacios simples: "  Entrenar " y "entrenar" son la misma tarea.
+const sameTitle = (title) =>
+  String(title ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/** Días ('YYYY-MM-DD') con una tarea completada que se llama `title`. */
+export async function completedDatesByTitle(title) {
+  const key = sameTitle(title);
+  const tasks = await getAll(STORE);
+  return new Set(tasks.filter((task) => task.done && sameTitle(task.title) === key).map((task) => task.date));
 }
 
 export async function createTask(date, title) {
