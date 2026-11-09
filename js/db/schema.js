@@ -1,7 +1,7 @@
 import { uid } from '../lib/id.js';
 
 export const DB_NAME = 'orden';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   periodStartDay: 17,
@@ -86,7 +86,27 @@ const migrations = {
       cursor.continue();
     };
   },
+
+  // Medios de pago de los gastos (lista editable). Los gastos anteriores quedan sin medio.
+  4(db, tx) {
+    db.createObjectStore('paymentMethods', { keyPath: 'id' });
+    tx.objectStore('transactions').createIndex('paymentMethodId', 'paymentMethodId');
+    const store = tx.objectStore('paymentMethods');
+    defaultPaymentMethods(new Date().toISOString()).forEach((method) => store.put(method));
+  },
 };
+
+const PAYMENT_METHODS = [
+  ['Tarjeta', '#d9a441'],
+  ['Mercado Pago', '#5b9bd5'],
+];
+
+/** Medios iniciales; también se usan al importar un respaldo anterior a los medios de pago. */
+export function defaultPaymentMethods(now) {
+  return PAYMENT_METHODS.map(([name, color], order) =>
+    ({ id: uid(), name, color, order, archived: false, createdAt: now, updatedAt: now })
+  );
+}
 
 export function upgrade(db, oldVersion, tx) {
   for (let version = oldVersion + 1; version <= DB_VERSION; version++) {

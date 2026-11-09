@@ -153,7 +153,8 @@ export function parseStatementText(text, today) {
 /** Guarda las filas confirmadas. Los movimientos que ya existían (misma huella) se omiten. */
 export function saveScreenshotRows(rows, fileName) {
   return ingest(
-    rows.map(({ type, currency, amount, date, categoryId, description }) => ({ type, currency, amount, date, categoryId, description })),
+    rows.map(({ type, currency, amount, date, categoryId, paymentMethodId, description }) =>
+      ({ type, currency, amount, date, categoryId, paymentMethodId, description })),
     { kind: 'screenshot', fileName }
   );
 }

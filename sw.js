@@ -1,5 +1,5 @@
 // Subir VERSION en cada cambio de archivos para que el celular descargue la nueva versión.
-const VERSION = 'v9';
+const VERSION = 'v10';
 const CACHE = `orden-${VERSION}`;
 // Lector de capturas (vendor/, ≈ 6 MB): no se precarga; se guarda al primer uso y se conserva
 // entre versiones. Cambiar el sufijo solo si cambian esos archivos.
@@ -31,6 +31,7 @@ const ASSETS = [
   'js/modules/finance/classifier.js',
   'js/modules/finance/finance.view.js',
   'js/modules/finance/metrics.js',
+  'js/modules/finance/payment-methods.repo.js',
   'js/modules/finance/period-income.repo.js',
   'js/modules/finance/period-nav.js',
   'js/modules/finance/screenshot.view.js',

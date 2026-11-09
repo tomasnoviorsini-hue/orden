@@ -32,7 +32,7 @@ export function setFinanceAppBar(view, { current, isCurrent }) {
       onclick: () => navigate('finanzas/captura'),
     }, icon('image')),
     h('button', {
-      class: 'btn btn-icon', type: 'button', 'aria-label': 'Categorías',
+      class: 'btn btn-icon', type: 'button', 'aria-label': 'Categorías y medios de pago',
       onclick: () => navigate('finanzas/categorias'),
     }, icon('tag'))
   );

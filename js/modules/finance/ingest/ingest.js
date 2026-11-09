@@ -13,6 +13,7 @@ import { isCurrency, DEFAULT_CURRENCY } from '../../../lib/money.js';
  *     type: 'income' | 'expense',
  *     amount: number,          // centavos, entero > 0
  *     currency?: 'ARS' | 'USD', // por defecto ARS
+ *     paymentMethodId?: string, // solo gastos; null si no se indicó
  *     date: 'YYYY-MM-DD',
  *     categoryId: string,
  *     description?: string,
@@ -34,12 +35,13 @@ function normalize(draft) {
     currency: draft.currency ?? DEFAULT_CURRENCY,
     date: String(draft.date ?? ''),
     categoryId: draft.categoryId ?? null,
+    paymentMethodId: draft.type === 'expense' ? draft.paymentMethodId || null : null,
     description: String(draft.description ?? '').trim().replace(/\s+/g, ' ').slice(0, DESCRIPTION_MAX),
     externalRef: draft.externalRef ?? null,
   };
 }
 
-function validate(record, categoriesById) {
+function validate(record, categoriesById, methodsById) {
   if (!TYPES.has(record.type)) return 'El tipo de movimiento no es válido.';
   if (!Number.isInteger(record.amount) || record.amount <= 0) return 'Ingrese un monto válido mayor a cero.';
   if (record.amount > MAX_AMOUNT) return 'El monto es demasiado grande.';
@@ -48,6 +50,7 @@ function validate(record, categoriesById) {
   const category = categoriesById.get(record.categoryId);
   if (!category) return 'Elija una categoría.';
   if (category.kind !== record.type) return 'La categoría no corresponde al tipo de movimiento.';
+  if (record.paymentMethodId && !methodsById.has(record.paymentMethodId)) return 'El medio de pago no es válido.';
   return null;
 }
 
@@ -74,10 +77,12 @@ export function fingerprint({ date, type, amount, description, currency = DEFAUL
 }
 
 async function prepare(drafts) {
-  const categoriesById = new Map((await getAll('categories')).map((category) => [category.id, category]));
+  const [categories, methods] = await Promise.all([getAll('categories'), getAll('paymentMethods')]);
+  const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const methodsById = new Map(methods.map((method) => [method.id, method]));
   return drafts.map((draft, index) => {
     const record = normalize(draft);
-    return { index, record, error: validate(record, categoriesById) };
+    return { index, record, error: validate(record, categoriesById, methodsById) };
   });
 }
 

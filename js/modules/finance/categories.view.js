@@ -4,6 +4,9 @@ import {
   listCategories, usageCounts, createCategory, updateCategory, deleteCategory,
   CATEGORY_COLORS, NAME_MAX,
 } from './categories.repo.js';
+import {
+  listPaymentMethods, paymentMethodUsage, createPaymentMethod, updatePaymentMethod, deletePaymentMethod,
+} from './payment-methods.repo.js';
 
 const SECTIONS = [
   { kind: 'expense', title: 'Categorías de gastos', addLabel: 'Agregar categoría de gasto' },
@@ -61,7 +64,7 @@ function categoryDialog({ title, name = '', color }) {
 }
 
 export async function render(root) {
-  setAppBar('Categorías',
+  setAppBar('Categorías y medios',
     h('button', {
       class: 'btn btn-icon', type: 'button', 'aria-label': 'Volver a finanzas',
       onclick: () => navigate('finanzas'),
@@ -103,6 +106,46 @@ export async function render(root) {
     if (confirmed) run(() => deleteCategory(category.id));
   }
 
+  // Medios de pago: mismo diálogo y mismas reglas que las categorías.
+
+  async function addMethod(existing) {
+    const used = new Set(existing.map((method) => method.color));
+    const color = CATEGORY_COLORS.find((value) => !used.has(value)) ?? CATEGORY_COLORS[0];
+    const values = await categoryDialog({ title: 'Nuevo medio de pago', color });
+    if (values) run(() => createPaymentMethod(values));
+  }
+
+  async function editMethod(method) {
+    const values = await categoryDialog({ title: 'Editar medio de pago', name: method.name, color: method.color });
+    if (values) run(() => updatePaymentMethod(method.id, values));
+  }
+
+  async function removeMethod(method, used) {
+    if (used) {
+      toast(`No se puede eliminar "${method.name}": tiene ${movementsText(used).toLowerCase()}.`);
+      return;
+    }
+    const confirmed = await confirmDialog({
+      title: 'Eliminar medio de pago',
+      message: `¿Desea eliminar el medio de pago "${method.name}"?`,
+      confirmLabel: 'Eliminar',
+      danger: true,
+    });
+    if (confirmed) run(() => deletePaymentMethod(method.id));
+  }
+
+  function methodItem(method, used) {
+    return h('li', { class: 'list-item' },
+      h('span', { class: 'cat-dot', style: `background:${method.color}` }),
+      h('span', { class: 'category-main' },
+        h('span', null, method.name),
+        h('span', { class: 'muted' }, movementsText(used))
+      ),
+      h('button', { class: 'btn btn-icon', type: 'button', 'aria-label': `Editar ${method.name}`, onclick: () => editMethod(method) }, icon('edit')),
+      h('button', { class: 'btn btn-icon', type: 'button', 'aria-label': `Eliminar ${method.name}`, onclick: () => removeMethod(method, used) }, icon('trash'))
+    );
+  }
+
   function categoryItem(category, used) {
     return h('li', { class: 'list-item' },
       h('span', { class: 'cat-dot', style: `background:${category.color}` }),
@@ -116,8 +159,14 @@ export async function render(root) {
   }
 
   async function refresh() {
-    const categories = await listCategories();
-    const usage = await usageCounts(categories);
+    const [categories, methods] = await Promise.all([listCategories(), listPaymentMethods()]);
+    const [usage, methodUsage] = await Promise.all([usageCounts(categories), paymentMethodUsage(methods)]);
+    const methodSection = [
+      h('h2', { class: 'section-title' }, 'Medios de pago'),
+      h('p', { class: 'muted capture-hint' }, 'Se eligen al cargar un gasto y separan los gastos en Movimientos y Resumen.'),
+      h('ul', { class: 'list card card-flush' }, methods.map((method) => methodItem(method, methodUsage.get(method.id) ?? 0))),
+      h('button', { class: 'btn btn-block add-category', type: 'button', onclick: () => addMethod(methods) }, icon('plus'), 'Agregar medio de pago'),
+    ];
     root.replaceChildren(...SECTIONS.flatMap(({ kind, title, addLabel }) => {
       const ofKind = categories.filter((category) => category.kind === kind);
       return [
@@ -125,7 +174,7 @@ export async function render(root) {
         h('ul', { class: 'list card card-flush' }, ofKind.map((category) => categoryItem(category, usage.get(category.id) ?? 0))),
         h('button', { class: 'btn btn-block add-category', type: 'button', onclick: () => add(kind, ofKind) }, icon('plus'), addLabel),
       ];
-    }));
+    }), ...methodSection);
   }
 
   await refresh();

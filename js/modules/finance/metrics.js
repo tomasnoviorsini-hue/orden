@@ -71,3 +71,19 @@ export function periodSeries(transactions, periods, incomeRecords) {
     ),
   }));
 }
+
+/**
+ * Gastos por medio de pago, en el orden de `methods`; al final, los gastos sin medio (paymentMethodId null).
+ * Solo incluye filas con monto.
+ */
+export function expensesByPaymentMethod(transactions, methods) {
+  const totals = new Map();
+  for (const transaction of transactions) {
+    if (transaction.type !== 'expense') continue;
+    const key = transaction.paymentMethodId ?? null;
+    totals.set(key, (totals.get(key) ?? 0) + transaction.amount);
+  }
+  return [...methods.map((method) => method.id), null]
+    .filter((id) => totals.get(id))
+    .map((paymentMethodId) => ({ paymentMethodId, amount: totals.get(paymentMethodId) }));
+}

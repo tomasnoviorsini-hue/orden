@@ -4,7 +4,8 @@ import { formatMoney, CURRENCIES, CURRENCY_NAMES } from '../../lib/money.js';
 import { getCategoryMap } from './categories.repo.js';
 import { listByPeriod } from './transactions.repo.js';
 import { listPeriodIncomes } from './period-income.repo.js';
-import { periodSummary } from './metrics.js';
+import { periodSummary, expensesByPaymentMethod } from './metrics.js';
+import { listPaymentMethods, getPaymentMethodMap } from './payment-methods.repo.js';
 import { resolvePeriod, setFinanceAppBar, periodHeader, financeTabs } from './period-nav.js';
 
 // Rutas del módulo:
@@ -32,23 +33,26 @@ export async function render(root, [section, arg]) {
 }
 
 const FALLBACK_CATEGORY = { name: 'Sin categoría', color: '#8a929c' };
+const NO_METHOD = { name: 'Sin medio de pago', color: '#5c6370' };
 
-function movementItem(transaction, categories) {
+function movementItem(transaction, categories, methods) {
   const category = categories.get(transaction.categoryId) ?? FALLBACK_CATEGORY;
+  const method = transaction.type === 'expense' ? methods.get(transaction.paymentMethodId) : null;
+  const detail = [method?.name, transaction.description].filter(Boolean).join(' · ');
   const sign = transaction.type === 'income' ? '+' : '−';
   return h('li', null,
     h('a', { class: 'movement', href: `#/finanzas/editar/${transaction.id}` },
       h('span', { class: 'cat-dot', style: `background:${category.color}` }),
       h('span', { class: 'movement-main' },
         h('span', null, category.name),
-        transaction.description && h('span', { class: 'muted movement-desc' }, transaction.description)
+        detail && h('span', { class: 'muted movement-desc' }, detail)
       ),
       h('span', { class: `movement-amount ${transaction.type}` }, `${sign} ${formatMoney(transaction.amount, transaction.currency)}`)
     )
   );
 }
 
-function summaryCard(currency, { income, expense, balance, fixed }, labelled) {
+function summaryCard(currency, { income, expense, balance, fixed }, byMethod, methods, labelled) {
   const money = (cents) => formatMoney(cents, currency);
   return h('div', { class: 'card summary' },
     h('span', { class: 'summary-label' }, labelled ? `Saldo disponible en ${CURRENCY_NAMES[currency].toLowerCase()}` : 'Saldo disponible'),
@@ -62,8 +66,37 @@ function summaryCard(currency, { income, expense, balance, fixed }, labelled) {
         h('span', { class: 'summary-label' }, 'Gastos'),
         h('span', { class: 'summary-value expense' }, money(expense))
       )
+    ),
+    byMethod.length > 0 && h('dl', { class: 'detail-list method-totals', 'aria-label': 'Gastos por medio de pago' },
+      byMethod.flatMap(({ paymentMethodId, amount }) => {
+        const method = methods.get(paymentMethodId) ?? NO_METHOD;
+        return [
+          h('dt', null, h('span', { class: 'cat-dot', style: `background:${method.color}` }), method.name),
+          h('dd', null, money(amount)),
+        ];
+      })
     )
   );
+}
+
+// Apartados de la lista: todos, un medio de pago, gastos sin medio o ingresos.
+const FILTER_ALL = 'todos';
+const FILTER_NONE = 'sin-medio';
+const FILTER_INCOME = 'ingresos';
+
+function matchesFilter(transaction, filter) {
+  if (filter === FILTER_ALL) return true;
+  if (filter === FILTER_INCOME) return transaction.type === 'income';
+  if (transaction.type !== 'expense') return false;
+  return filter === FILTER_NONE ? !transaction.paymentMethodId : transaction.paymentMethodId === filter;
+}
+
+function filterTotal(items) {
+  return CURRENCIES
+    .map((currency) => [currency, items.filter((t) => t.currency === currency).reduce((sum, t) => sum + t.amount, 0)])
+    .filter(([, amount]) => amount)
+    .map(([currency, amount]) => formatMoney(amount, currency))
+    .join(' + ');
 }
 
 async function renderMovements(root, startParam) {
@@ -71,9 +104,11 @@ async function renderMovements(root, startParam) {
   const { period, isCurrent } = ctx;
   setFinanceAppBar('movimientos', ctx);
 
-  const [transactions, categories, ...incomeRecords] = await Promise.all([
+  const [transactions, categories, methodList, methods, ...incomeRecords] = await Promise.all([
     listByPeriod(period),
     getCategoryMap(),
+    listPaymentMethods(),
+    getPaymentMethodMap(),
     ...CURRENCIES.map((currency) => listPeriodIncomes(currency)),
   ]);
 
@@ -82,23 +117,55 @@ async function renderMovements(root, startParam) {
     const own = transactions.filter((t) => t.currency === currency);
     const summary = periodSummary(own, period, incomeRecords[i]);
     const show = i === 0 || own.length > 0 || summary.fixed;
-    return show && summaryCard(currency, summary, i > 0);
+    return show && summaryCard(currency, summary, expensesByPaymentMethod(own, methodList), methods, i > 0);
   });
 
-  const groups = new Map();
-  for (const transaction of transactions) {
-    if (!groups.has(transaction.date)) groups.set(transaction.date, []);
-    groups.get(transaction.date).push(transaction);
+  const hasUnassigned = transactions.some((t) => t.type === 'expense' && !t.paymentMethodId);
+  const filters = [
+    [FILTER_ALL, 'Todos'],
+    ...methodList.map((method) => [method.id, method.name]),
+    hasUnassigned && [FILTER_NONE, 'Sin medio'],
+    [FILTER_INCOME, 'Ingresos'],
+  ].filter(Boolean);
+  let filter = FILTER_ALL;
+
+  const listRoot = h('div');
+
+  function renderList() {
+    const items = transactions.filter((t) => matchesFilter(t, filter));
+    const groups = new Map();
+    for (const transaction of items) {
+      if (!groups.has(transaction.date)) groups.set(transaction.date, []);
+      groups.get(transaction.date).push(transaction);
+    }
+    const label = filters.find(([value]) => value === filter)[1];
+    listRoot.replaceChildren(
+      filter !== FILTER_ALL && items.length > 0
+        ? h('p', { class: 'muted filter-total' }, `${label}: ${filterTotal(items)}`)
+        : '',
+      items.length
+        ? h('div', { class: 'stack' }, [...groups].map(([date, dayItems]) =>
+            h('section', null,
+              h('h3', { class: 'group-title' }, formatLong(date)),
+              h('ul', { class: 'list card card-flush movement-list' }, dayItems.map((t) => movementItem(t, categories, methods)))
+            )
+          ))
+        : h('div', { class: 'empty' }, filter === FILTER_ALL ? 'No hay movimientos en este período.' : `No hay movimientos en "${label}" en este período.`)
+    );
   }
 
-  const movements = transactions.length
-    ? h('div', { class: 'stack' }, [...groups].map(([date, items]) =>
-        h('section', null,
-          h('h3', { class: 'group-title' }, formatLong(date)),
-          h('ul', { class: 'list card card-flush movement-list' }, items.map((t) => movementItem(t, categories)))
-        )
-      ))
-    : h('div', { class: 'empty' }, 'No hay movimientos en este período.');
+  const filterBar = h('div', { class: 'chips filter-chips', role: 'radiogroup', 'aria-label': 'Apartado' },
+    filters.map(([value, label]) =>
+      h('label', { class: 'chip' },
+        h('input', {
+          type: 'radio', name: 'movement-filter', value, checked: value === filter,
+          onchange: () => { filter = value; renderList(); },
+        }),
+        label
+      )
+    )
+  );
+  renderList();
 
   const fab = h('a', {
     class: 'fab',
@@ -111,7 +178,8 @@ async function renderMovements(root, startParam) {
     financeTabs('movimientos', ctx),
     ...summaries.filter(Boolean),
     h('h2', { class: 'section-title' }, 'Movimientos'),
-    movements,
+    transactions.length > 0 ? filterBar : '',
+    listRoot,
     h('div', { class: 'fab-spacer' }),
     fab
   );

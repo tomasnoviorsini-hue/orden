@@ -410,6 +410,14 @@ select.input { appearance: none; padding-right: 36px; background-image: linear-g
 
 .cat-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; }
 
+.method-totals { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 0.9rem; }
+
+.method-totals dt { display: flex; align-items: center; gap: 8px; }
+
+.filter-chips { margin-bottom: var(--gap); }
+
+.filter-total { margin-bottom: 8px; }
+
 .category-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 .add-category { margin-top: 8px; }
@@ -614,6 +622,8 @@ select.input { appearance: none; padding-right: 36px; background-image: linear-g
 
 .segmented-compact .segment { padding: 8px 10px; font-weight: 600; }
 
+.segmented-compact .segment:has(input:checked) { color: var(--accent); }
+
 .currency-switch { margin-top: var(--gap); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -670,6 +680,8 @@ select.input { appearance: none; padding-right: 36px; background-image: linear-g
 .capture-money { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
 
 .capture-currency { width: auto; padding-left: 10px; }
+
+.capture-method { grid-column: 1 / -1; }
 
 .capture-amount { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 

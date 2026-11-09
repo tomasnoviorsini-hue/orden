@@ -59,6 +59,13 @@ Cada movimiento se carga en pesos o en dólares. Los totales nunca se mezclan ni
 **Movimientos** muestra un saldo por moneda y **Resumen** tiene un selector Pesos / Dólares, con su
 propio ingreso fijo del período en cada moneda. Los datos anteriores a esta función quedan en pesos.
 
+## Medios de pago
+
+Cada gasto se marca con un medio de pago (Tarjeta y Mercado Pago de entrada; se agregan, renombran
+o eliminan desde **Finanzas → ícono de etiqueta**, igual que las categorías). **Movimientos** muestra
+los gastos por medio en cada saldo y permite ver un apartado a la vez; **Resumen** tiene la sección
+**Gastos por medio de pago**. Los gastos cargados antes quedan como "Sin medio de pago" hasta editarlos.
+
 ## Carga desde capturas
 
 **Finanzas → ícono de imagen**: se eligen capturas de los movimientos (banco, billetera, tarjeta),

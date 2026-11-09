@@ -4,6 +4,7 @@ import { formatAmountInput, parseARS, CURRENCIES, CURRENCY_SYMBOLS, CURRENCY_NAM
 import { navigate } from '../../router.js';
 import { getSettings } from '../settings/settings.repo.js';
 import { listCategories } from './categories.repo.js';
+import { listPaymentMethods } from './payment-methods.repo.js';
 import { getTransaction, deleteTransaction, restoreTransaction } from './transactions.repo.js';
 import { saveManualTransaction } from './ingest/sources/manual.js';
 import { DESCRIPTION_MAX } from './ingest/ingest.js';
@@ -12,9 +13,10 @@ const field = (id, label, control) =>
   h('div', { class: 'field' }, h('label', { for: id }, label), control);
 
 export async function render(root, mode, arg) {
-  const [{ periodStartDay }, categories, existing] = await Promise.all([
+  const [{ periodStartDay }, categories, methods, existing] = await Promise.all([
     getSettings(),
     listCategories(),
+    listPaymentMethods(),
     mode === 'editar' ? getTransaction(arg) : null,
   ]);
 
@@ -42,6 +44,7 @@ export async function render(root, mode, arg) {
   let type = existing?.type ?? 'expense';
   let categoryId = existing?.categoryId ?? null;
   let currency = existing?.currency ?? DEFAULT_CURRENCY;
+  let paymentMethodId = existing?.paymentMethodId ?? null;
 
   // Tipo
 
@@ -102,7 +105,27 @@ export async function render(root, mode, arg) {
 
   const categoryGroup = h('div', { class: 'chips', role: 'radiogroup', 'aria-labelledby': 'category-label' });
 
+  // Medio de pago (solo gastos)
+
+  const methodGroup = h('div', { class: 'chips', role: 'radiogroup', 'aria-labelledby': 'method-label' },
+    methods.map((method) =>
+      h('label', { class: 'chip' },
+        h('input', {
+          type: 'radio', name: 'payment-method', value: method.id, checked: method.id === paymentMethodId,
+          onchange: () => { paymentMethodId = method.id; },
+        }),
+        h('span', { class: 'cat-dot', style: `background:${method.color}` }),
+        method.name
+      )
+    )
+  );
+  const methodField = h('div', { class: 'field' },
+    h('span', { id: 'method-label', class: 'field-label' }, 'Medio de pago'),
+    methodGroup
+  );
+
   function renderCategories() {
+    methodField.hidden = type !== 'expense' || !methods.length;
     const options = categories.filter((category) => category.kind === type);
     if (!options.some((category) => category.id === categoryId)) categoryId = null;
     categoryGroup.replaceChildren(...options.map((category) =>
@@ -124,6 +147,10 @@ export async function render(root, mode, arg) {
 
   async function save(event) {
     event.preventDefault();
+    if (type === 'expense' && methods.length && !paymentMethodId) {
+      toast('Elija un medio de pago.');
+      return;
+    }
     saveButton.disabled = true;
     try {
       const saved = await saveManualTransaction({
@@ -132,6 +159,7 @@ export async function render(root, mode, arg) {
         amountText: amountInput.value,
         date: dateInput.value,
         categoryId,
+        paymentMethodId,
         description: descriptionInput.value,
       }, existing?.id);
       toast(existing ? 'Movimiento actualizado.' : 'Movimiento guardado.');
@@ -165,6 +193,7 @@ export async function render(root, mode, arg) {
         categoryGroup,
         h('a', { class: 'link-sm', href: '#/finanzas/categorias' }, 'Administrar categorías')
       ),
+      methodField,
       field('date', 'Fecha', dateInput),
       field('description', 'Descripción', descriptionInput),
       saveButton,

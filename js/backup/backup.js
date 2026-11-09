@@ -1,5 +1,5 @@
 import { withTx, promisify, get, put } from '../db/idb.js';
-import { DB_VERSION } from '../db/schema.js';
+import { DB_VERSION, defaultPaymentMethods } from '../db/schema.js';
 import { isValidISO, todayISO } from '../lib/date.js';
 import { isCurrency } from '../lib/money.js';
 
@@ -9,7 +9,7 @@ import { isCurrency } from '../lib/money.js';
  * La importación reemplaza todo en una sola transacción: si algo falla, no cambia nada.
  */
 
-export const BACKUP_STORES = ['meta', 'categories', 'transactions', 'imports', 'tasks', 'periodIncomes'];
+export const BACKUP_STORES = ['meta', 'categories', 'transactions', 'imports', 'tasks', 'periodIncomes', 'paymentMethods'];
 
 const APP_ID = 'orden';
 const FORMAT = 1;
@@ -22,6 +22,7 @@ const LABELS = {
   imports: 'importaciones',
   tasks: 'tareas',
   periodIncomes: 'ingresos del período',
+  paymentMethods: 'medios de pago',
 };
 
 const isKind = (value) => value === 'income' || value === 'expense';
@@ -32,10 +33,12 @@ const VALIDATORS = {
   categories: (r) => typeof r.id === 'string' && typeof r.name === 'string' && isKind(r.kind),
   transactions: (r, refs) =>
     typeof r.id === 'string' && isKind(r.type) && isPositiveInt(r.amount) &&
-    isValidISO(r.date) && refs.categoryIds.has(r.categoryId) && isCurrency(r.currency),
+    isValidISO(r.date) && refs.categoryIds.has(r.categoryId) && isCurrency(r.currency) &&
+    (r.paymentMethodId == null || refs.methodIds.has(r.paymentMethodId)),
   imports: (r) => typeof r.id === 'string',
   tasks: (r) => typeof r.id === 'string' && isValidISO(r.date) && typeof r.title === 'string' && typeof r.done === 'boolean',
   periodIncomes: (r) => isCurrency(r.currency) && isValidISO(r.start) && isPositiveInt(r.amount),
+  paymentMethods: (r) => typeof r.id === 'string' && typeof r.name === 'string',
 };
 
 function fail(message) {
@@ -77,7 +80,7 @@ export async function getLastBackupAt() {
 
 /**
  * Lleva los datos de respaldos anteriores al esquema actual, como la migración 3:
- * sin moneda → pesos; el almacén periodIncome pasa a periodIncomes.
+ * sin moneda → pesos; el almacén periodIncome pasa a periodIncomes; sin medios de pago → los iniciales.
  */
 function upgradeData(data) {
   const withCurrency = (records) => (Array.isArray(records)
@@ -87,6 +90,7 @@ function upgradeData(data) {
     ...data,
     transactions: withCurrency(data.transactions),
     periodIncomes: withCurrency(data.periodIncomes ?? data.periodIncome),
+    paymentMethods: data.paymentMethods ?? defaultPaymentMethods(new Date().toISOString()),
   };
 }
 
@@ -116,7 +120,10 @@ export function parseBackup(text) {
     data[name] = records;
   }
 
-  const refs = { categoryIds: new Set(data.categories.map((category) => category?.id)) };
+  const refs = {
+    categoryIds: new Set(data.categories.map((category) => category?.id)),
+    methodIds: new Set(data.paymentMethods.map((method) => method?.id)),
+  };
   for (const name of BACKUP_STORES) {
     const index = data[name].findIndex(
       (record) => !record || typeof record !== 'object' || !VALIDATORS[name](record, refs)

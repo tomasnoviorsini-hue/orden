@@ -5,8 +5,9 @@ import { getAll, countByIndex } from '../../db/idb.js';
 import { recognizeImage, releaseOcr } from '../../lib/ocr.js';
 import { navigate } from '../../router.js';
 import { listCategories } from './categories.repo.js';
+import { listPaymentMethods } from './payment-methods.repo.js';
 import { buildClassifier } from './classifier.js';
-import { fingerprint, DESCRIPTION_MAX } from './ingest/ingest.js';
+import { fingerprint, simplifyText, DESCRIPTION_MAX } from './ingest/ingest.js';
 import { parseStatementText, saveScreenshotRows } from './ingest/sources/screenshot.js';
 
 // #/finanzas/captura: lee capturas de movimientos con OCR local, sugiere categorías
@@ -14,8 +15,23 @@ import { parseStatementText, saveScreenshotRows } from './ingest/sources/screens
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
+// Pistas en el texto de la captura para sugerir el medio de pago (por nombre del medio).
+const METHOD_HINTS = [
+  ['mercado pago', /mercado ?pago|merpago/],
+  ['tarjeta', /(visa|master ?card|amex|american express|cabal|naranja|tarjeta)/],
+];
+
+function detectMethod(text, methods) {
+  const simple = simplifyText(text);
+  for (const [name, pattern] of METHOD_HINTS) {
+    const method = methods.find((item) => simplifyText(item.name) === name);
+    if (method && pattern.test(simple)) return method.id;
+  }
+  return null;
+}
+
 export async function render(root) {
-  const [categories, history] = await Promise.all([listCategories(), getAll('transactions')]);
+  const [categories, methods, history] = await Promise.all([listCategories(), listPaymentMethods(), getAll('transactions')]);
   const classify = buildClassifier(history, categories);
   const categoriesByKind = (kind) => categories.filter((category) => category.kind === kind);
 
@@ -86,10 +102,27 @@ export async function render(root) {
   const reviewList = h('div', { class: 'stack' });
   const totals = h('p', { class: 'muted' });
   const saveButton = h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: save });
+  const methodOptions = (selected, placeholder) => [
+    h('option', { value: '', selected: !selected }, placeholder),
+    ...methods.map((method) => h('option', { value: method.id, selected: method.id === selected }, method.name)),
+  ];
+  const bulkMethod = h('select', {
+    class: 'input', id: 'bulk-method',
+    onchange: () => {
+      rows.filter((row) => row.type === 'expense').forEach((row) => row.setMethod(bulkMethod.value || null));
+      bulkMethod.value = '';
+    },
+  }, methodOptions(null, 'Elegir para todos los gastos…'));
+  const bulkField = methods.length > 0 && h('div', { class: 'field capture-hint' },
+    h('label', { for: 'bulk-method' }, 'Medio de pago de los gastos'),
+    bulkMethod
+  );
+
   const capturesBox = h('details', { class: 'table-toggle' }, h('summary', null, 'Ver capturas y texto leído'));
   const review = h('section', { class: 'capture-review', hidden: true },
     reviewTitle,
     h('p', { class: 'muted capture-hint' }, 'Revise cada fila: puede corregir los datos, cambiar la categoría o desmarcar las que no correspondan.'),
+    bulkField,
     reviewList,
     capturesBox,
     h('div', { class: 'capture-footer stack' },
@@ -129,6 +162,7 @@ export async function render(root) {
     if (row.suspicious) notes.push(row.suspicious);
     if (!row.dateFound) notes.push('Sin fecha en la captura: se usó la de hoy');
     if (!row.source) notes.push('Sin sugerencia de categoría');
+    if (row.type === 'expense' && methods.length && !row.paymentMethodId) notes.push('Falta el medio de pago');
     if (row.error) notes.push(row.error);
     return notes;
   }
@@ -157,6 +191,7 @@ export async function render(root) {
       class: 'input', 'aria-label': 'Tipo',
       onchange: () => {
         row.type = typeSelect.value;
+        methodSelect.hidden = row.type !== 'expense' || !methods.length;
         Object.assign(row, classify(row.description, row.type));
         categorySelect.replaceChildren(...categoryOptions(row));
         amountInput.classList.toggle('income', row.type === 'income');
@@ -184,6 +219,13 @@ export async function render(root) {
     }, CURRENCIES.map((currency) =>
       h('option', { value: currency, selected: row.currency === currency, title: CURRENCY_NAMES[currency] }, CURRENCY_SYMBOLS[currency])
     ));
+
+    const methodSelect = h('select', {
+      class: 'input capture-method', 'aria-label': 'Medio de pago',
+      hidden: row.type !== 'expense' || !methods.length,
+      onchange: () => { row.paymentMethodId = methodSelect.value || null; row.error = null; refreshNotes(); },
+    }, methodOptions(row.paymentMethodId, 'Medio de pago…'));
+    row.setMethod = (id) => { row.paymentMethodId = id; methodSelect.value = id ?? ''; row.error = null; refreshNotes(); };
 
     const descriptionInput = h('input', {
       class: 'input', type: 'text', maxlength: String(DESCRIPTION_MAX), autocomplete: 'off',
@@ -218,7 +260,8 @@ export async function render(root) {
         typeSelect,
         h('div', { class: 'capture-money' }, currencySelect, amountInput),
         dateInput,
-        h('div', { class: 'capture-category' }, dot, categorySelect)
+        h('div', { class: 'capture-category' }, dot, categorySelect),
+        methodSelect
       ),
       notes
     );
@@ -228,9 +271,9 @@ export async function render(root) {
     return card;
   }
 
-  async function addRows(parsed) {
+  async function addRows(parsed, methodId) {
     for (const item of parsed) {
-      const row = { ...item, ...classify(item.description, item.type), duplicate: false, error: null };
+      const row = { ...item, ...classify(item.description, item.type), paymentMethodId: methodId, duplicate: false, error: null };
       row.duplicate = (await countByIndex('transactions', 'fingerprint', fingerprint(row))) > 0 ||
         rows.some((other) => fingerprint(other) === fingerprint(row));
       row.include = !row.duplicate && !row.suspicious;
@@ -266,7 +309,7 @@ export async function render(root) {
             h('figcaption', null, h('pre', { class: 'capture-text' }, text.trim() || '(sin texto)'))
           )
         );
-        await addRows(parsed);
+        await addRows(parsed, detectMethod(text, methods));
       } catch (error) {
         console.error(error);
         if (alive) toast(error.message || 'No se pudo leer la captura.', { duration: 5000 });
@@ -292,6 +335,7 @@ export async function render(root) {
     if (row.amount == null || row.amount <= 0) return 'Revise el monto';
     if (!isValidISO(row.date)) return 'Revise la fecha';
     if (!row.categoryId) return 'Elija una categoría';
+    if (row.type === 'expense' && methods.length && !row.paymentMethodId) return 'Elija el medio de pago';
     return null;
   }
 

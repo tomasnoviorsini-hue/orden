@@ -5,7 +5,8 @@ import { donutChart, groupedBarChart } from '../../lib/charts.js';
 import { getCategoryMap } from './categories.repo.js';
 import { listByPeriod } from './transactions.repo.js';
 import { listPeriodIncomes, setPeriodIncome, removePeriodIncome } from './period-income.repo.js';
-import { ratio, totalsByCategory, topWithOther, periodSummary, periodSeries } from './metrics.js';
+import { ratio, totalsByCategory, topWithOther, periodSummary, periodSeries, expensesByPaymentMethod } from './metrics.js';
+import { listPaymentMethods } from './payment-methods.repo.js';
 import { resolvePeriod, setFinanceAppBar, periodHeader, financeTabs, periodPath, getViewCurrency, currencySwitch } from './period-nav.js';
 
 const HISTORY = 6;
@@ -199,6 +200,20 @@ function expensesCard(transactions, { income, expense }, categoryOf) {
   );
 }
 
+const NO_METHOD = { name: 'Sin medio de pago', color: '#5c6370' };
+
+function methodsCard(transactions, { income, expense }, methods) {
+  const rows = expensesByPaymentMethod(transactions, methods);
+  if (!rows.length) return h('div', { class: 'empty' }, 'No hay gastos en este período.');
+  const byId = new Map(methods.map((method) => [method.id, method]));
+  return h('div', { class: 'card' },
+    h('ul', { class: 'breakdown' }, rows.map(({ paymentMethodId, amount }) =>
+      breakdownRow(byId.get(paymentMethodId) ?? NO_METHOD, amount, amount / expense,
+        `${pct(amount / expense)} de los gastos · ${pct(ratio(amount, income))} del ingreso`)
+    ))
+  );
+}
+
 function incomeMovementsCard(transactions, { fixed, movementIncome }, categoryOf) {
   const rows = totalsByCategory(transactions, 'income');
   if (!rows.length) return h('div', { class: 'empty' }, 'No hay ingresos cargados como movimientos en este período.');
@@ -276,9 +291,10 @@ export async function render(root, startParam) {
   setFinanceAppBar('resumen', ctx);
 
   const periods = Array.from({ length: HISTORY }, (_, i) => shiftPeriod(period, i - HISTORY + 1, startDay));
-  const [allHistory, categories, incomeRecords] = await Promise.all([
+  const [allHistory, categories, methods, incomeRecords] = await Promise.all([
     listByPeriod({ start: periods[0].start, end: period.end }),
     getCategoryMap(),
+    listPaymentMethods(),
     listPeriodIncomes(currency),
   ]);
   const history = allHistory.filter((t) => t.currency === currency);
@@ -295,6 +311,8 @@ export async function render(root, startParam) {
     heroCard(summary),
     h('h2', { class: 'section-title' }, 'Gastos por categoría'),
     expensesCard(transactions, summary, categoryOf),
+    h('h2', { class: 'section-title' }, 'Gastos por medio de pago'),
+    methodsCard(transactions, summary, methods),
     h('h2', { class: 'section-title' }, 'Ingresos cargados como movimientos'),
     incomeMovementsCard(transactions, summary, categoryOf),
     h('h2', { class: 'section-title' }, `Últimos ${HISTORY} períodos`),
